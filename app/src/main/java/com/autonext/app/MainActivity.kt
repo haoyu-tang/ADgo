@@ -1,7 +1,11 @@
 package com.autonext.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
+import android.os.Build
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -15,16 +19,20 @@ import android.widget.CheckedTextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.autonext.app.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var loadingUi = false
+    private var lastKnownServiceEnabled: Boolean? = null
 
     companion object {
         private const val KEY_AUTO_SAVE_ENABLED = "key_auto_save_enabled"
         private const val DEFAULT_AUTO_SAVE_ENABLED = true
+        private const val REQ_POST_NOTIFICATIONS = 2001
     }
 
     private data class AppItem(
@@ -68,6 +76,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.btnEnable.setOnClickListener {
+            showCurrentServiceStatusToast()
             try {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             } catch (e: Exception) {
@@ -97,6 +106,14 @@ class MainActivity : AppCompatActivity() {
         binding.btnSaveRules.setOnClickListener {
             saveRules()
         }
+
+        requestNotificationPermissionIfNeeded()
+        refreshServiceStatus(showChangeToast = false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshServiceStatus(showChangeToast = true)
     }
 
     private fun selectAllApps() {
@@ -283,6 +300,60 @@ class MainActivity : AppCompatActivity() {
         if (loadingUi) return
         if (binding.switchAutoSave.isChecked) {
             saveRules(showToast = false)
+        }
+    }
+
+    private fun refreshServiceStatus(showChangeToast: Boolean) {
+        val enabled = isAccessibilityServiceEnabled()
+        val statusText = if (enabled) {
+            getString(R.string.service_status_enabled)
+        } else {
+            getString(R.string.service_status_disabled)
+        }
+        binding.btnEnable.setText(if (enabled) R.string.btn_manage else R.string.btn_enable)
+        binding.tvServiceStatus.text = getString(R.string.service_status_label, statusText)
+
+        val previous = lastKnownServiceEnabled
+        if (showChangeToast && previous != null && previous != enabled) {
+            showCurrentServiceStatusToast(enabled)
+        }
+        lastKnownServiceEnabled = enabled
+    }
+
+    private fun showCurrentServiceStatusToast(enabled: Boolean = isAccessibilityServiceEnabled()) {
+        val messageRes = if (enabled) {
+            R.string.service_status_toast_enabled
+        } else {
+            R.string.service_status_toast_disabled
+        }
+        Toast.makeText(this, messageRes, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+        if (enabledServices.isBlank()) return false
+
+        val componentName = ComponentName(this, AutoNextService::class.java).flattenToString()
+        return enabledServices
+            .split(':')
+            .any { it.equals(componentName, ignoreCase = true) }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                REQ_POST_NOTIFICATIONS
+            )
         }
     }
 

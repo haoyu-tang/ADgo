@@ -1,10 +1,17 @@
 package com.autonext.app
 
 import android.accessibilityservice.AccessibilityService
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.graphics.Rect
+import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 
 /**
  * AutoNextService - ad auto-skip engine.
@@ -50,6 +57,8 @@ class AutoNextService : AccessibilityService() {
         private const val MIN_CLICK_INTERVAL_MS = 800L  // Minimum interval between clicks.
         private const val MAX_CLICKS_PER_WINDOW = 5     // Maximum auto-clicks allowed per window.
         private const val MAX_PARENT_WALK_DEPTH = 5     // Maximum parent depth to search for a clickable ancestor.
+        private const val STATUS_NOTIFICATION_ID = 1001
+        private const val STATUS_CHANNEL_ID = "adgo_service_status"
 
         /**
          * When enabled, service only runs for packages that match [PACKAGE_ALLOWLIST].
@@ -91,6 +100,11 @@ class AutoNextService : AccessibilityService() {
 
     // ---- AccessibilityService callbacks -----------------------------------
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        showStatusNotification()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
         val pkg = event.packageName?.toString()?.lowercase() ?: ""
@@ -122,6 +136,16 @@ class AutoNextService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.d(TAG, "onInterrupt")
+    }
+
+    override fun onDestroy() {
+        hideStatusNotification()
+        super.onDestroy()
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        hideStatusNotification()
+        return super.onUnbind(intent)
     }
 
     // ---- Scan and click ---------------------------------------------------
@@ -284,5 +308,49 @@ class AutoNextService : AccessibilityService() {
             }
         }
         return false
+    }
+
+    private fun showStatusNotification() {
+        ensureStatusNotificationChannel()
+
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setContentTitle(getString(R.string.notif_title_enabled))
+            .setContentText(getString(R.string.notif_text_enabled))
+            .setContentIntent(contentIntent)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        NotificationManagerCompat.from(this).notify(STATUS_NOTIFICATION_ID, notification)
+    }
+
+    private fun hideStatusNotification() {
+        NotificationManagerCompat.from(this).cancel(STATUS_NOTIFICATION_ID)
+    }
+
+    private fun ensureStatusNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        val channel = NotificationChannel(
+            STATUS_CHANNEL_ID,
+            getString(R.string.notif_channel_name),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = getString(R.string.notif_channel_desc)
+            setShowBadge(false)
+        }
+        manager.createNotificationChannel(channel)
     }
 }

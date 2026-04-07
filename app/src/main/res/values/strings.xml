@@ -5,6 +5,12 @@
     <string name="description">ADgo uses Android Accessibility Service to detect and tap buttons like "Next" and "Skip", helping you skip in-app ads automatically.\n\nHow to use:\n1. Tap the button below to open Accessibility Settings.\n2. Find "ADgo" in downloaded services and enable it.\n3. Return to the app. The service will run in the background.\n\nNote: The service can affect all foreground apps. Disable it in Accessibility Settings when not needed.</string>
 
     <string name="btn_enable">Enable Accessibility Service</string>
+    <string name="btn_manage">Manage Accessibility Service</string>
+    <string name="service_status_label">Current service status: %1$s</string>
+    <string name="service_status_enabled">Enabled</string>
+    <string name="service_status_disabled">Disabled</string>
+    <string name="service_status_toast_enabled">Accessibility service is currently enabled</string>
+    <string name="service_status_toast_disabled">Accessibility service is currently disabled</string>
     <string name="allowlist_title">Safe Mode (Selected Apps Only)</string>
     <string name="allowlist_desc">When enabled, auto tapping works only for package names listed below. Separate multiple entries by new lines, commas, or semicolons.</string>
     <string name="allowlist_switch">Enable package allowlist</string>
@@ -28,6 +34,10 @@ com.tencent
 tv.danmaku.bili</string>
     <string name="btn_save_rules">Save rules</string>
     <string name="save_success">Rules saved</string>
+    <string name="notif_channel_name">ADgo status</string>
+    <string name="notif_channel_desc">Shows whether ADgo accessibility service is running</string>
+    <string name="notif_title_enabled">ADgo is running</string>
+    <string name="notif_text_enabled">Accessibility auto-skip service is enabled</string>
 
     <!-- AccessibilityService description shown in system settings -->
     <string name="accessibility_service_description">ADgo monitors on-screen content and automatically taps ad skip buttons (Next / Skip / 下一步 / 跳过).</string>

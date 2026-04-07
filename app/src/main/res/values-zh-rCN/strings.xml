@@ -5,6 +5,12 @@
     <string name="description">ADgo 使用 Android 无障碍服务，自动检测屏幕上出现的“下一步”“跳过”“Next”“Skip”按钮并点击，帮助你无感跳过应用内广告。\n\n使用步骤：\n1. 点击下方按钮，跳转到系统无障碍设置页面。\n2. 在已下载应用列表中找到“ADgo”并开启。\n3. 开启后返回，服务将在后台全局运行。\n\n注意：服务对所有前台应用生效。使用完毕后，请前往无障碍设置关闭，或直接卸载本应用。</string>
 
     <string name="btn_enable">开启无障碍服务</string>
+    <string name="btn_manage">管理无障碍服务</string>
+    <string name="service_status_label">当前服务状态：%1$s</string>
+    <string name="service_status_enabled">已开启</string>
+    <string name="service_status_disabled">已关闭</string>
+    <string name="service_status_toast_enabled">无障碍服务当前已开启</string>
+    <string name="service_status_toast_disabled">无障碍服务当前未开启</string>
     <string name="allowlist_title">安全模式（仅指定应用）</string>
     <string name="allowlist_desc">开启后，自动点击只会在下方填写的包名中生效；多项可用换行、逗号或分号分隔。</string>
     <string name="allowlist_switch">启用包名白名单</string>
@@ -28,6 +34,10 @@ com.tencent
 tv.danmaku.bili</string>
     <string name="btn_save_rules">保存规则</string>
     <string name="save_success">规则已保存</string>
+    <string name="notif_channel_name">ADgo 状态</string>
+    <string name="notif_channel_desc">显示 ADgo 无障碍服务是否正在运行</string>
+    <string name="notif_title_enabled">ADgo 正在运行</string>
+    <string name="notif_text_enabled">无障碍自动跳过服务已开启</string>
 
     <string name="accessibility_service_description">ADgo 将监测屏幕内容，自动识别并点击广告跳过按钮（Next / Skip / 下一步 / 跳过）。</string>
 </resources>

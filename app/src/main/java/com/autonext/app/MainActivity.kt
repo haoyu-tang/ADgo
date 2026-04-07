@@ -91,6 +91,9 @@ class MainActivity : AppCompatActivity() {
         binding.btnClearApps.setOnClickListener {
             clearSelectedApps()
         }
+        binding.btnEditPackages.setOnClickListener {
+            openPackageEditorDialog()
+        }
         binding.btnSaveRules.setOnClickListener {
             saveRules()
         }
@@ -103,7 +106,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         binding.switchAllowlist.isChecked = true
-        binding.etAllowlistPackages.setText(apps.map { it.packageName }.joinToString("\n"))
+        setPackagePreview(apps.map { it.packageName }.joinToString("\n"))
         maybeAutoSave()
     }
 
@@ -113,15 +116,15 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.no_apps_found, Toast.LENGTH_SHORT).show()
             return
         }
-        val current = parsePackageInput(binding.etAllowlistPackages.text?.toString().orEmpty())
+        val current = parsePackageInput(getPackageText())
         val inverted = apps.map { it.packageName }.filterNot { current.contains(it) }
         binding.switchAllowlist.isChecked = true
-        binding.etAllowlistPackages.setText(inverted.joinToString("\n"))
+        setPackagePreview(inverted.joinToString("\n"))
         maybeAutoSave()
     }
 
     private fun clearSelectedApps() {
-        binding.etAllowlistPackages.setText("")
+        setPackagePreview("")
         maybeAutoSave()
     }
 
@@ -132,7 +135,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val selectedPackages = parsePackageInput(binding.etAllowlistPackages.text?.toString().orEmpty()).toMutableSet()
+        val selectedPackages = parsePackageInput(getPackageText()).toMutableSet()
         val dialogView = layoutInflater.inflate(R.layout.dialog_app_selector, null)
         val searchEditText = dialogView.findViewById<EditText>(R.id.et_search_apps)
         val listView = dialogView.findViewById<ListView>(R.id.list_apps)
@@ -186,7 +189,36 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 binding.switchAllowlist.isChecked = true
-                binding.etAllowlistPackages.setText(selectedPackages.sorted().joinToString("\n"))
+                setPackagePreview(selectedPackages.sorted().joinToString("\n"))
+                maybeAutoSave()
+            }
+            .show()
+    }
+
+    private fun openPackageEditorDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_package_editor, null)
+        val editor = dialogView.findViewById<EditText>(R.id.et_package_editor)
+        val normalizeButton = dialogView.findViewById<View>(R.id.btn_normalize_packages)
+        val clearButton = dialogView.findViewById<View>(R.id.btn_clear_packages)
+        val currentText = getPackageText()
+        editor.setText(currentText)
+        editor.setSelection(editor.text?.length ?: 0)
+
+        normalizeButton.setOnClickListener {
+            val normalized = normalizePackageText(editor.text?.toString().orEmpty())
+            editor.setText(normalized)
+            editor.setSelection(editor.text?.length ?: 0)
+        }
+        clearButton.setOnClickListener {
+            editor.setText("")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.edit_packages_title)
+            .setView(dialogView)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                setPackagePreview(normalizePackageText(editor.text?.toString().orEmpty()))
                 maybeAutoSave()
             }
             .show()
@@ -226,7 +258,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.switchAllowlist.isChecked = enabled
         binding.switchAutoSave.isChecked = autoSave
-        binding.etAllowlistPackages.setText(text)
+        setPackagePreview(text)
         loadingUi = false
 
         binding.switchAutoSave.setOnCheckedChangeListener { _, _ ->
@@ -239,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         prefs.edit()
             .putBoolean(AutoNextService.KEY_ALLOWLIST_ENABLED, binding.switchAllowlist.isChecked)
             .putBoolean(KEY_AUTO_SAVE_ENABLED, binding.switchAutoSave.isChecked)
-            .putString(AutoNextService.KEY_ALLOWLIST_TEXT, binding.etAllowlistPackages.text?.toString().orEmpty())
+            .putString(AutoNextService.KEY_ALLOWLIST_TEXT, getPackageText())
             .apply()
 
         if (showToast) {
@@ -253,6 +285,25 @@ class MainActivity : AppCompatActivity() {
             saveRules(showToast = false)
         }
     }
+
+    private fun getPackageText(): String {
+        val current = binding.etAllowlistPackages.text?.toString().orEmpty()
+        return if (current == getString(R.string.allowlist_preview_empty)) "" else current
+    }
+
+    private fun setPackagePreview(value: String) {
+        val normalized = normalizePackageText(value)
+        binding.etAllowlistPackages.text = if (normalized.isBlank()) {
+            getString(R.string.allowlist_preview_empty)
+        } else {
+            normalized
+        }
+    }
+
+    private fun normalizePackageText(raw: String): String =
+        parsePackageInput(raw)
+            .sorted()
+            .joinToString("\n")
 
     private fun parsePackageInput(raw: String): Set<String> =
         raw.split('\n', ',', ';')

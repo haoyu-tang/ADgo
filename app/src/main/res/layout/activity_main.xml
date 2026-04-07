@@ -39,9 +39,9 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:lineSpacingMultiplier="1.5"
             android:text="@string/description"
-            android:textAppearance="?attr/textAppearanceBody2"
-            android:lineSpacingMultiplier="1.5" />
+            android:textAppearance="?attr/textAppearanceBody2" />
 
         <Button
             android:id="@+id/btn_enable"
@@ -124,21 +124,27 @@
                 android:text="@string/btn_clear_apps" />
         </LinearLayout>
 
-        <EditText
+        <Button
+            android:id="@+id/btn_edit_packages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/btn_edit_packages" />
+
+        <TextView
             android:id="@+id/et_allowlist_packages"
             android:layout_width="match_parent"
-            android:layout_height="120dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:background="?attr/editTextBackground"
-            android:fadeScrollbars="false"
+            android:ellipsize="end"
             android:gravity="start|top"
-            android:hint="@string/allowlist_hint"
-            android:inputType="textMultiLine|textNoSuggestions"
-            android:maxLines="6"
-            android:overScrollMode="ifContentScrolls"
-            android:padding="12dp" />
-            android:scrollHorizontally="true"
-            android:scrollbars="horizontal|vertical" />
+            android:minHeight="120dp"
+            android:padding="12dp"
+            android:text="@string/allowlist_preview_empty"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:textIsSelectable="true"
+            android:maxLines="6" />
 
         <Button
             android:id="@+id/btn_save_rules"

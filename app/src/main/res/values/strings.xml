@@ -11,12 +11,17 @@
     <string name="auto_save_switch">Auto-save rules</string>
     <string name="auto_save_desc">When enabled, app selections and allowlist switch changes are saved automatically.</string>
     <string name="btn_select_apps">Select apps</string>
+    <string name="btn_edit_packages">View or edit package list</string>
     <string name="btn_select_all_apps">Select all</string>
     <string name="btn_invert_apps">Invert</string>
     <string name="btn_clear_apps">Clear</string>
     <string name="select_apps_title">Select apps to apply auto actions</string>
+    <string name="edit_packages_title">View or edit selected packages</string>
+    <string name="btn_normalize_packages">Deduplicate and sort</string>
+    <string name="btn_clear_packages">Clear packages</string>
     <string name="search_apps_hint">Search by app name or package name</string>
     <string name="no_apps_found">No available apps found</string>
+    <string name="allowlist_preview_empty">No packages selected yet</string>
     <string name="allowlist_hint">Example:
 com.ss.android
 com.tencent

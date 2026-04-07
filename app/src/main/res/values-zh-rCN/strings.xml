@@ -11,12 +11,17 @@
     <string name="auto_save_switch">自动保存规则</string>
     <string name="auto_save_desc">开启后，选择应用或修改白名单开关会自动保存，无需再点“保存规则”。</string>
     <string name="btn_select_apps">选择应用列表</string>
+    <string name="btn_edit_packages">查看或编辑包名列表</string>
     <string name="btn_select_all_apps">全选</string>
     <string name="btn_invert_apps">反选</string>
     <string name="btn_clear_apps">清空</string>
     <string name="select_apps_title">选择需要自动处理的应用</string>
+    <string name="edit_packages_title">查看或编辑已选包名</string>
+    <string name="btn_normalize_packages">去重并排序</string>
+    <string name="btn_clear_packages">清空包名</string>
     <string name="search_apps_hint">按应用名或包名搜索</string>
     <string name="no_apps_found">未找到可选择的应用</string>
+    <string name="allowlist_preview_empty">暂未选择任何包名</string>
     <string name="allowlist_hint">示例：
 com.ss.android
 com.tencent

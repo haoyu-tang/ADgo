@@ -1,11 +1,29 @@
 <resources>
     <string name="app_name">ADgo</string>
-    <string name="subtitle">广告自动跳过助手</string>
+    <string name="subtitle">Ad Auto Skip Assistant</string>
 
-    <string name="description">ADgo 使用 Android 无障碍服务，自动检测屏幕上出现的"下一步""跳过""Next""Skip"按钮并点击，帮助你无感跳过应用内广告。\n\n使用步骤：\n1. 点击下方按钮，跳转到系统无障碍设置页面。\n2. 在已下载应用列表中找到"ADgo"并开启。\n3. 开启后返回，服务将在后台全局运行。\n\n注意：服务对所有前台应用生效。使用完毕后，请前往无障碍设置关闭，或直接卸载本应用。</string>
+    <string name="description">ADgo uses Android Accessibility Service to detect and tap buttons like "Next" and "Skip", helping you skip in-app ads automatically.\n\nHow to use:\n1. Tap the button below to open Accessibility Settings.\n2. Find "ADgo" in downloaded services and enable it.\n3. Return to the app. The service will run in the background.\n\nNote: The service can affect all foreground apps. Disable it in Accessibility Settings when not needed.</string>
 
-    <string name="btn_enable">开启无障碍服务</string>
+    <string name="btn_enable">Enable Accessibility Service</string>
+    <string name="allowlist_title">Safe Mode (Selected Apps Only)</string>
+    <string name="allowlist_desc">When enabled, auto tapping works only for package names listed below. Separate multiple entries by new lines, commas, or semicolons.</string>
+    <string name="allowlist_switch">Enable package allowlist</string>
+    <string name="auto_save_switch">Auto-save rules</string>
+    <string name="auto_save_desc">When enabled, app selections and allowlist switch changes are saved automatically.</string>
+    <string name="btn_select_apps">Select apps</string>
+    <string name="btn_select_all_apps">Select all</string>
+    <string name="btn_invert_apps">Invert</string>
+    <string name="btn_clear_apps">Clear</string>
+    <string name="select_apps_title">Select apps to apply auto actions</string>
+    <string name="search_apps_hint">Search by app name or package name</string>
+    <string name="no_apps_found">No available apps found</string>
+    <string name="allowlist_hint">Example:
+com.ss.android
+com.tencent
+tv.danmaku.bili</string>
+    <string name="btn_save_rules">Save rules</string>
+    <string name="save_success">Rules saved</string>
 
     <!-- AccessibilityService description shown in system settings -->
-    <string name="accessibility_service_description">ADgo 将监测屏幕内容，自动识别并点击广告跳过按钮（Next / Skip / 下一步 / 跳过）。</string>
+    <string name="accessibility_service_description">ADgo monitors on-screen content and automatically taps ad skip buttons (Next / Skip / 下一步 / 跳过).</string>
 </resources>

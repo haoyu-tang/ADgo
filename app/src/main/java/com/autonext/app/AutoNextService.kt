@@ -22,6 +22,10 @@ class AutoNextService : AccessibilityService() {
     companion object {
         private const val TAG = "AutoNextService"
 
+        const val PREFS_NAME = "autonext_prefs"
+        const val KEY_ALLOWLIST_ENABLED = "key_allowlist_enabled"
+        const val KEY_ALLOWLIST_TEXT = "key_allowlist_text"
+
         /** Target text keywords matched case-insensitively by substring. */
         private val TARGET_TEXTS = listOf(
             "skip", "next", "跳过", "下一步", "关闭", "close"
@@ -46,6 +50,29 @@ class AutoNextService : AccessibilityService() {
         private const val MIN_CLICK_INTERVAL_MS = 800L  // Minimum interval between clicks.
         private const val MAX_CLICKS_PER_WINDOW = 5     // Maximum auto-clicks allowed per window.
         private const val MAX_PARENT_WALK_DEPTH = 5     // Maximum parent depth to search for a clickable ancestor.
+
+        /**
+         * When enabled, service only runs for packages that match [PACKAGE_ALLOWLIST].
+         * Keep disabled by default to support all apps.
+         */
+        const val DEFAULT_ENABLE_PACKAGE_ALLOWLIST = false
+
+        /** Optional package fragments to allow when allowlist mode is enabled. */
+        val DEFAULT_ALLOWLIST = listOf(
+            "com.ss.android",
+            "com.tencent",
+            "tv.danmaku.bili"
+        )
+
+        /** Always blocked package fragments to avoid risky taps in system or purchase flows. */
+        private val PACKAGE_DENYLIST = listOf(
+            "com.autonext.app",
+            "com.android.systemui",
+            "com.android.settings",
+            "com.android.packageinstaller",
+            "com.google.android.permissioncontroller",
+            "com.android.vending"
+        )
     }
 
     // ---- Runtime state ----------------------------------------------------
@@ -66,6 +93,9 @@ class AutoNextService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
+        val pkg = event.packageName?.toString()?.lowercase() ?: ""
+        if (!shouldHandlePackage(pkg)) return
+
         Log.v(TAG, "event type=${event.eventType} pkg=${event.packageName}")
 
         when (event.eventType) {
@@ -168,6 +198,26 @@ class AutoNextService : AccessibilityService() {
 
     private fun isBlacklisted(text: String): Boolean =
         text.isNotBlank() && BLACKLIST_TEXTS.any { text.contains(it, ignoreCase = true) }
+
+    /** Package-level gating to reduce accidental clicks on sensitive/system screens. */
+    private fun shouldHandlePackage(pkg: String): Boolean {
+        if (pkg.isBlank()) return false
+        if (PACKAGE_DENYLIST.any { pkg.contains(it, ignoreCase = true) }) return false
+
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val allowlistEnabled = prefs.getBoolean(KEY_ALLOWLIST_ENABLED, DEFAULT_ENABLE_PACKAGE_ALLOWLIST)
+        if (!allowlistEnabled) return true
+
+        val raw = prefs.getString(KEY_ALLOWLIST_TEXT, DEFAULT_ALLOWLIST.joinToString("\n")).orEmpty()
+        val allowlist = parseAllowlist(raw)
+        if (allowlist.isEmpty()) return false
+        return allowlist.any { pkg.contains(it, ignoreCase = true) }
+    }
+
+    private fun parseAllowlist(raw: String): List<String> =
+        raw.split('\n', ',', ';')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
 
     /** Heuristic for popup close icon in top-right area, such as "x"/"×". */
     private fun isCloseIcon(

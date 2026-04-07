@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="8dp">
+
+    <EditText
+        android:id="@+id/et_search_apps"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/search_apps_hint"
+        android:imeOptions="actionSearch"
+        android:inputType="text|textNoSuggestions"
+        android:maxLines="1"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp" />
+
+    <ListView
+        android:id="@+id/list_apps"
+        android:layout_width="match_parent"
+        android:layout_height="400dp"
+        android:layout_marginTop="12dp"
+        android:fadeScrollbars="false"
+        android:scrollbars="vertical" />
+</LinearLayout>

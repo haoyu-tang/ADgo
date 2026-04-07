@@ -50,6 +50,103 @@
             android:layout_marginTop="32dp"
             android:text="@string/btn_enable" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/allowlist_title"
+            android:textAppearance="?attr/textAppearanceSubtitle1"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/allowlist_desc"
+            android:textAppearance="?attr/textAppearanceCaption" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_allowlist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/allowlist_switch" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_auto_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/auto_save_switch" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/auto_save_desc"
+            android:textAppearance="?attr/textAppearanceCaption" />
+
+        <Button
+            android:id="@+id/btn_select_apps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/btn_select_apps" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:weightSum="3">
+
+            <Button
+                android:id="@+id/btn_select_all_apps"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/btn_select_all_apps" />
+
+            <Button
+                android:id="@+id/btn_invert_apps"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="@string/btn_invert_apps" />
+
+            <Button
+                android:id="@+id/btn_clear_apps"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="@string/btn_clear_apps" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/et_allowlist_packages"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:layout_marginTop="12dp"
+            android:background="?attr/editTextBackground"
+            android:fadeScrollbars="false"
+            android:gravity="start|top"
+            android:hint="@string/allowlist_hint"
+            android:inputType="textMultiLine|textNoSuggestions"
+            android:maxLines="6"
+            android:overScrollMode="ifContentScrolls"
+            android:padding="12dp" />
+            android:scrollHorizontally="true"
+            android:scrollbars="horizontal|vertical" />
+
+        <Button
+            android:id="@+id/btn_save_rules"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/btn_save_rules" />
+
     </LinearLayout>
 
 </ScrollView>

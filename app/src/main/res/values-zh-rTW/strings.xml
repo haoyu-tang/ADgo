@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">ADgo</string>
+    <string name="subtitle">廣告自動跳過助手</string>
+
+    <string name="description">ADgo 使用 Android 無障礙服務，自動偵測螢幕上出現的「下一步」「跳過」「Next」「Skip」按鈕並點擊，幫助你無感跳過應用內廣告。\n\n使用步驟：\n1. 點擊下方按鈕，前往系統無障礙設定頁面。\n2. 在已下載應用清單中找到「ADgo」並開啟。\n3. 開啟後返回，服務將在背景全域執行。\n\n注意：服務會對所有前景應用生效。使用完畢後，請前往無障礙設定將其關閉，或直接解除安裝本應用。</string>
+
+    <string name="btn_enable">開啟無障礙服務</string>
+    <string name="allowlist_title">安全模式（僅指定應用）</string>
+    <string name="allowlist_desc">開啟後，自動點擊只會在下方填寫的套件名稱中生效；多項可用換行、逗號或分號分隔。</string>
+    <string name="allowlist_switch">啟用套件白名單</string>
+    <string name="auto_save_switch">自動儲存規則</string>
+    <string name="auto_save_desc">開啟後，選擇應用或修改白名單開關時會自動儲存，無需再點「儲存規則」。</string>
+    <string name="btn_select_apps">選擇應用清單</string>
+    <string name="btn_select_all_apps">全選</string>
+    <string name="btn_invert_apps">反選</string>
+    <string name="btn_clear_apps">清空</string>
+    <string name="select_apps_title">選擇需要自動處理的應用</string>
+    <string name="search_apps_hint">依應用名稱或套件名稱搜尋</string>
+    <string name="no_apps_found">找不到可選擇的應用</string>
+    <string name="allowlist_hint">示例：
+com.ss.android
+com.tencent
+tv.danmaku.bili</string>
+    <string name="btn_save_rules">儲存規則</string>
+    <string name="save_success">規則已儲存</string>
+
+    <string name="accessibility_service_description">ADgo 將監測螢幕內容，自動識別並點擊廣告跳過按鈕（Next / Skip / 下一步 / 跳過）。</string>
+</resources>

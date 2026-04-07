@@ -1,6 +1,7 @@
 package com.autonext.app
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Rect
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -23,13 +24,14 @@ class AutoNextService : AccessibilityService() {
 
         /** Target text keywords matched case-insensitively by substring. */
         private val TARGET_TEXTS = listOf(
-            "skip", "next", "跳过", "下一步"
+            "skip", "next", "跳过", "下一步", "关闭", "close"
         )
 
         /** Target view ID fragments matched against viewIdResourceName by case-insensitive substring. */
         private val TARGET_VIEW_IDS = listOf(
             "skip", "next", "btn_skip", "btn_next",
-            "ad_skip", "ad_close", "skip_btn", "next_btn", "close_ad"
+            "ad_skip", "ad_close", "skip_btn", "next_btn", "close_ad",
+            "close", "btn_close", "iv_close", "img_close", "close_btn", "dialog_close", "popup_close"
         )
 
         /**
@@ -81,6 +83,10 @@ class AutoNextService : AccessibilityService() {
                 // Content updated dynamically, for example when a countdown reveals a skip button.
                 scanAndClick(event)
             }
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
+                // Window stack changed, useful for overlay dialogs and popups.
+                scanAndClick(event)
+            }
         }
     }
 
@@ -129,6 +135,7 @@ class AutoNextService : AccessibilityService() {
         var textAndId: AccessibilityNodeInfo? = null
         var textOnly:  AccessibilityNodeInfo? = null
         var idOnly:    AccessibilityNodeInfo? = null
+        var closeIcon: AccessibilityNodeInfo? = null
 
         bfs(root) { node ->
             val text    = mergeLabels(node).lowercase().trim()
@@ -144,10 +151,11 @@ class AutoNextService : AccessibilityService() {
                 textHit && idHit  && textAndId == null -> textAndId = node
                 textHit && !idHit && textOnly  == null -> textOnly  = node
                 !textHit && idHit && idOnly    == null -> idOnly    = node
+                closeIcon == null && isCloseIcon(node, text, viewId, root) -> closeIcon = node
             }
         }
 
-        return textAndId ?: textOnly ?: idOnly
+        return textAndId ?: textOnly ?: idOnly ?: closeIcon
     }
 
     // ---- Matching predicates ----------------------------------------------
@@ -160,6 +168,32 @@ class AutoNextService : AccessibilityService() {
 
     private fun isBlacklisted(text: String): Boolean =
         text.isNotBlank() && BLACKLIST_TEXTS.any { text.contains(it, ignoreCase = true) }
+
+    /** Heuristic for popup close icon in top-right area, such as "x"/"×". */
+    private fun isCloseIcon(
+        node: AccessibilityNodeInfo,
+        text: String,
+        viewId: String,
+        root: AccessibilityNodeInfo
+    ): Boolean {
+        val compact = text.replace(" ", "")
+        val symbolHit = compact == "x" || compact == "×" || compact == "✕" || compact == "✖"
+        val textHit = compact == "close" || compact == "关闭"
+        val idHit = viewId.contains("close", ignoreCase = true)
+        if (!symbolHit && !textHit && !idHit) return false
+
+        // Prefer nodes likely to be popup close buttons in top-right area.
+        val nodeRect = Rect()
+        val rootRect = Rect()
+        node.getBoundsInScreen(nodeRect)
+        root.getBoundsInScreen(rootRect)
+        if (rootRect.width() <= 0 || rootRect.height() <= 0) return false
+
+        val inTopArea = nodeRect.centerY() <= (rootRect.top + rootRect.height() * 0.35)
+        val inRightArea = nodeRect.centerX() >= (rootRect.left + rootRect.width() * 0.65)
+        val clickable = node.isClickable || node.parent?.isClickable == true
+        return inTopArea && inRightArea && clickable
+    }
 
     /** Merges text and contentDescription so matches are not missed when only one is populated. */
     private fun mergeLabels(node: AccessibilityNodeInfo): String =

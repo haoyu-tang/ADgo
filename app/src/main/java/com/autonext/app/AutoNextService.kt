@@ -35,14 +35,24 @@ class AutoNextService : AccessibilityService() {
 
         /** Target text keywords matched case-insensitively by substring. */
         private val TARGET_TEXTS = listOf(
-            "skip", "next", "跳过", "下一步", "关闭", "close"
+            "skip", "next", "跳过", "下一步"
         )
 
         /** Target view ID fragments matched against viewIdResourceName by case-insensitive substring. */
         private val TARGET_VIEW_IDS = listOf(
             "skip", "next", "btn_skip", "btn_next",
-            "ad_skip", "ad_close", "skip_btn", "next_btn", "close_ad",
-            "close", "btn_close", "iv_close", "img_close", "close_btn", "dialog_close", "popup_close"
+            "ad_skip", "skip_btn", "next_btn"
+        )
+
+        /** Close-related text/viewId hints, used only with ad-context validation. */
+        private val CLOSE_HINTS = listOf(
+            "close", "关闭", "關閉", "ad_close", "close_ad", "btn_close", "iv_close",
+            "img_close", "close_btn", "dialog_close", "popup_close"
+        )
+
+        /** Popup context must contain ad/sponsored words before any close action is allowed. */
+        private val AD_CONTEXT_HINTS = listOf(
+            "广告", "廣告", "赞助", "贊助", "AD"
         )
 
         /**
@@ -190,6 +200,7 @@ class AutoNextService : AccessibilityService() {
         var textOnly:  AccessibilityNodeInfo? = null
         var idOnly:    AccessibilityNodeInfo? = null
         var closeIcon: AccessibilityNodeInfo? = null
+        val rootContextText = collectRootContext(root)
 
         bfs(root) { node ->
             val text    = mergeLabels(node).lowercase().trim()
@@ -200,12 +211,14 @@ class AutoNextService : AccessibilityService() {
 
             val textHit = isTargetText(text)
             val idHit   = isTargetViewId(viewId)
+            val closeHit = isCloseHint(text, viewId)
+            val allowClose = closeHit && hasAdContext(node, rootContextText)
 
             when {
                 textHit && idHit  && textAndId == null -> textAndId = node
                 textHit && !idHit && textOnly  == null -> textOnly  = node
                 !textHit && idHit && idOnly    == null -> idOnly    = node
-                closeIcon == null && isCloseIcon(node, text, viewId, root) -> closeIcon = node
+                closeIcon == null && allowClose && isCloseIcon(node, text, viewId, root) -> closeIcon = node
             }
         }
 
@@ -222,6 +235,56 @@ class AutoNextService : AccessibilityService() {
 
     private fun isBlacklisted(text: String): Boolean =
         text.isNotBlank() && BLACKLIST_TEXTS.any { text.contains(it, ignoreCase = true) }
+
+    private fun isCloseHint(text: String, viewId: String): Boolean {
+        val compact = text.replace(" ", "")
+        val symbolHit = compact == "x" || compact == "×" || compact == "✕" || compact == "✖"
+        return symbolHit || CLOSE_HINTS.any {
+            compact.contains(it, ignoreCase = true) || viewId.contains(it, ignoreCase = true)
+        }
+    }
+
+    private fun hasAdContext(node: AccessibilityNodeInfo, rootContextText: String): Boolean {
+        if (containsAdContext(rootContextText)) return true
+
+        val local = StringBuilder()
+        var parent: AccessibilityNodeInfo? = node
+        repeat(3) {
+            parent?.let {
+                local.append(' ')
+                local.append(mergeLabels(it))
+                local.append(' ')
+                local.append(it.viewIdResourceName.orEmpty())
+                parent = it.parent
+            }
+        }
+
+        node.parent?.let { p ->
+            for (i in 0 until p.childCount) {
+                p.getChild(i)?.let { child ->
+                    local.append(' ')
+                    local.append(mergeLabels(child))
+                    local.append(' ')
+                    local.append(child.viewIdResourceName.orEmpty())
+                }
+            }
+        }
+        return containsAdContext(local.toString())
+    }
+
+    private fun containsAdContext(text: String): Boolean =
+        text.isNotBlank() && AD_CONTEXT_HINTS.any { text.contains(it, ignoreCase = true) }
+
+    private fun collectRootContext(root: AccessibilityNodeInfo): String {
+        val sb = StringBuilder()
+        bfs(root) { node ->
+            sb.append(' ')
+            sb.append(mergeLabels(node))
+            sb.append(' ')
+            sb.append(node.viewIdResourceName.orEmpty())
+        }
+        return sb.toString()
+    }
 
     /** Package-level gating to reduce accidental clicks on sensitive/system screens. */
     private fun shouldHandlePackage(pkg: String): Boolean {

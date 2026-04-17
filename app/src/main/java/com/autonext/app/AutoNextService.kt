@@ -50,9 +50,11 @@ class AutoNextService : AccessibilityService() {
             "img_close", "close_btn", "dialog_close", "popup_close"
         )
 
-        /** Popup context must contain ad/sponsored words before any close action is allowed. */
+                /** Enhanced popup context must contain ad/sponsored words before any close action is allowed. */
         private val AD_CONTEXT_HINTS = listOf(
-            "广告", "廣告", "赞助", "贊助", "AD"
+            "广告", "廣告", "赞助", "贊助", "AD", "Promotion", 
+            "Advertisement", "Sponsored", "Banner", "Popup",
+            "Close Ad", "Skip Ad", "广告位", "推广", "营销"
         )
 
         /**
@@ -244,7 +246,7 @@ class AutoNextService : AccessibilityService() {
         }
     }
 
-    private fun hasAdContext(node: AccessibilityNodeInfo, rootContextText: String): Boolean {
+        private fun hasAdContext(node: AccessibilityNodeInfo, rootContextText: String): Boolean {
         if (containsAdContext(rootContextText)) return true
 
         val local = StringBuilder()
@@ -269,7 +271,10 @@ class AutoNextService : AccessibilityService() {
                 }
             }
         }
-        return containsAdContext(local.toString())
+        
+        // 添加布局检测作为上下文验证的一部分
+        val layoutBased = isPopupBasedOnLayout(node)
+        return containsAdContext(local.toString()) || layoutBased
     }
 
     private fun containsAdContext(text: String): Boolean =
@@ -306,7 +311,7 @@ class AutoNextService : AccessibilityService() {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
-    /** Heuristic for popup close icon in top-right area, such as "x"/"×". */
+        /** Heuristic for popup close icon in top-right area, such as "x"/"×". */
     private fun isCloseIcon(
         node: AccessibilityNodeInfo,
         text: String,
@@ -329,7 +334,67 @@ class AutoNextService : AccessibilityService() {
         val inTopArea = nodeRect.centerY() <= (rootRect.top + rootRect.height() * 0.35)
         val inRightArea = nodeRect.centerX() >= (rootRect.left + rootRect.width() * 0.65)
         val clickable = node.isClickable || node.parent?.isClickable == true
-        return inTopArea && inRightArea && clickable
+        
+        // 增强验证：检查布局特征
+        val layoutValidation = isPopupBasedOnLayout(node)
+        return inTopArea && inRightArea && clickable && layoutValidation
+    }
+
+        /** 增强的基于布局的弹窗检测 */
+    private fun isPopupBasedOnLayout(node: AccessibilityNodeInfo): Boolean {
+        val rect = Rect()
+        node.getBoundsInScreen(rect)
+        
+        // 获取屏幕尺寸
+        val rootWindow = rootInActiveWindow
+        val windowRect = Rect()
+        rootWindow?.getBoundsInScreen(windowRect)
+        val windowWidth = windowRect.width()
+        val windowHeight = windowRect.height()
+        
+        if (windowWidth <= 0 || windowHeight <= 0) return false
+        
+                val widthRatio = rect.width().toDouble() / windowWidth
+        val heightRatio = rect.height().toDouble() / windowHeight
+        
+        // 弹窗通常占屏幕的10-80%大小，高度比通常在10-60%
+        if (widthRatio < 0.1 || widthRatio > 0.8) return false
+        if (heightRatio < 0.1 || heightRatio > 0.6) return false
+        
+        // 检查是否靠近屏幕中心或顶部
+        val centerX = rect.centerX().toDouble()
+        val centerY = rect.centerY().toDouble()
+        
+        val centerDistance = Math.sqrt(
+            Math.pow(centerX - windowWidth/2.0, 2.0) + 
+            Math.pow(centerY - windowHeight/2.0, 2.0)
+        )
+        
+        // 如果靠近中心或靠近顶部，很可能是弹窗
+        val isNearCenter = centerDistance < windowWidth * 0.3
+        val isNearTop = rect.top < windowHeight * 0.2
+        
+        // 同时检查是否有阴影或边框特征（通过检查父节点）
+        val hasParentWithAlpha = checkParentWithAlpha(node)
+        
+        return (isNearCenter || isNearTop) && hasParentWithAlpha
+    }
+
+        /** 检查父节点是否具有透明度或阴影特征（弹窗常见特征） */
+    private fun checkParentWithAlpha(node: AccessibilityNodeInfo): Boolean {
+        var parent: AccessibilityNodeInfo? = node.parent
+        repeat(3) {
+            parent?.let { currentParent ->
+                // 检查父节点是否有弹窗相关属性
+                val className = currentParent.className?.toString()?.lowercase() ?: ""
+                if (className.contains("dialog") || className.contains("popup") || 
+                    className.contains("modal") || className.contains("overlay")) {
+                    return true
+                }
+                parent = currentParent.parent
+            }
+        }
+        return false
     }
 
     /** Merges text and contentDescription so matches are not missed when only one is populated. */

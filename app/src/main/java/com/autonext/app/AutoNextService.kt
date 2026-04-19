@@ -94,6 +94,21 @@ class AutoNextService : AccessibilityService() {
             "com.google.android.permissioncontroller",
             "com.android.vending"
         )
+
+        // Layout detection thresholds for popup validation
+        private const val POPUP_MIN_WIDTH_RATIO = 0.1
+        private const val POPUP_MAX_WIDTH_RATIO = 0.8
+        private const val POPUP_MIN_HEIGHT_RATIO = 0.1
+        private const val POPUP_MAX_HEIGHT_RATIO = 0.6
+        private const val CLOSE_ICON_TOP_AREA_THRESHOLD = 0.35
+        private const val CLOSE_ICON_RIGHT_AREA_THRESHOLD = 0.65
+        private const val POPUP_CENTER_DISTANCE_RATIO = 0.3
+        private const val POPUP_TOP_AREA_THRESHOLD = 0.2
+        private const val PARENT_WALK_DEPTH_FOR_CONTEXT = 3
+        private const val CLOSE_SYMBOL_MAX_WALK_DEPTH = 3
+
+        /** Close button symbols. */
+        private val CLOSE_SYMBOLS = setOf("x", "×", "✕", "✖")
     }
 
     // ---- Runtime state ----------------------------------------------------
@@ -102,7 +117,7 @@ class AutoNextService : AccessibilityService() {
 
     /** Identifies the current top-level window by "package/class" so counters reset on window change. */
     private var currentWindowToken = ""
-    private var clickCountThisWindow = 0
+    @Volatile private var clickCountThisWindow = 0
 
     /**
      * Tracks identity hash codes for clicked nodes in the current window to avoid duplicate taps.
@@ -240,18 +255,20 @@ class AutoNextService : AccessibilityService() {
 
     private fun isCloseHint(text: String, viewId: String): Boolean {
         val compact = text.replace(" ", "")
-        val symbolHit = compact == "x" || compact == "×" || compact == "✕" || compact == "✖"
+        val symbolHit = isCloseSymbol(compact)
         return symbolHit || CLOSE_HINTS.any {
             compact.contains(it, ignoreCase = true) || viewId.contains(it, ignoreCase = true)
         }
     }
+
+    private fun isCloseSymbol(text: String): Boolean = text in CLOSE_SYMBOLS
 
         private fun hasAdContext(node: AccessibilityNodeInfo, rootContextText: String): Boolean {
         if (containsAdContext(rootContextText)) return true
 
         val local = StringBuilder()
         var parent: AccessibilityNodeInfo? = node
-        repeat(3) {
+        repeat(PARENT_WALK_DEPTH_FOR_CONTEXT) {
             parent?.let {
                 local.append(' ')
                 local.append(mergeLabels(it))
@@ -268,11 +285,12 @@ class AutoNextService : AccessibilityService() {
                     local.append(mergeLabels(child))
                     local.append(' ')
                     local.append(child.viewIdResourceName.orEmpty())
+                    child.recycle()
                 }
             }
         }
         
-        // 添加布局检测作为上下文验证的一部分
+        // Add layout detection as part of context validation
         val layoutBased = isPopupBasedOnLayout(node)
         return containsAdContext(local.toString()) || layoutBased
     }
@@ -282,11 +300,17 @@ class AutoNextService : AccessibilityService() {
 
     private fun collectRootContext(root: AccessibilityNodeInfo): String {
         val sb = StringBuilder()
-        bfs(root) { node ->
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
             sb.append(' ')
             sb.append(mergeLabels(node))
             sb.append(' ')
             sb.append(node.viewIdResourceName.orEmpty())
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
         }
         return sb.toString()
     }
@@ -319,7 +343,7 @@ class AutoNextService : AccessibilityService() {
         root: AccessibilityNodeInfo
     ): Boolean {
         val compact = text.replace(" ", "")
-        val symbolHit = compact == "x" || compact == "×" || compact == "✕" || compact == "✖"
+        val symbolHit = isCloseSymbol(compact)
         val textHit = compact == "close" || compact == "关闭"
         val idHit = viewId.contains("close", ignoreCase = true)
         if (!symbolHit && !textHit && !idHit) return false
@@ -331,21 +355,21 @@ class AutoNextService : AccessibilityService() {
         root.getBoundsInScreen(rootRect)
         if (rootRect.width() <= 0 || rootRect.height() <= 0) return false
 
-        val inTopArea = nodeRect.centerY() <= (rootRect.top + rootRect.height() * 0.35)
-        val inRightArea = nodeRect.centerX() >= (rootRect.left + rootRect.width() * 0.65)
+        val inTopArea = nodeRect.centerY() <= (rootRect.top + rootRect.height() * CLOSE_ICON_TOP_AREA_THRESHOLD)
+        val inRightArea = nodeRect.centerX() >= (rootRect.left + rootRect.width() * CLOSE_ICON_RIGHT_AREA_THRESHOLD)
         val clickable = node.isClickable || node.parent?.isClickable == true
         
-        // 增强验证：检查布局特征
+        // Enhanced validation: check layout characteristics
         val layoutValidation = isPopupBasedOnLayout(node)
         return inTopArea && inRightArea && clickable && layoutValidation
     }
 
-        /** 增强的基于布局的弹窗检测 */
+        /** Enhanced layout-based popup detection. */
     private fun isPopupBasedOnLayout(node: AccessibilityNodeInfo): Boolean {
         val rect = Rect()
         node.getBoundsInScreen(rect)
         
-        // 获取屏幕尺寸
+        // Get screen size
         val rootWindow = rootInActiveWindow
         val windowRect = Rect()
         rootWindow?.getBoundsInScreen(windowRect)
@@ -354,38 +378,38 @@ class AutoNextService : AccessibilityService() {
         
         if (windowWidth <= 0 || windowHeight <= 0) return false
         
-                val widthRatio = rect.width().toDouble() / windowWidth
+        val widthRatio = rect.width().toDouble() / windowWidth
         val heightRatio = rect.height().toDouble() / windowHeight
         
-        // 弹窗通常占屏幕的10-80%大小，高度比通常在10-60%
-        if (widthRatio < 0.1 || widthRatio > 0.8) return false
-        if (heightRatio < 0.1 || heightRatio > 0.6) return false
+        // Popups typically occupy 10-80% of screen width and 10-60% of screen height
+        if (widthRatio < POPUP_MIN_WIDTH_RATIO || widthRatio > POPUP_MAX_WIDTH_RATIO) return false
+        if (heightRatio < POPUP_MIN_HEIGHT_RATIO || heightRatio > POPUP_MAX_HEIGHT_RATIO) return false
         
-        // 检查是否靠近屏幕中心或顶部
+        // Check if positioned near screen center or top
         val centerX = rect.centerX().toDouble()
         val centerY = rect.centerY().toDouble()
         
         val centerDistance = Math.sqrt(
-            Math.pow(centerX - windowWidth/2.0, 2.0) + 
-            Math.pow(centerY - windowHeight/2.0, 2.0)
+            Math.pow(centerX - windowWidth / 2.0, 2.0) + 
+            Math.pow(centerY - windowHeight / 2.0, 2.0)
         )
         
-        // 如果靠近中心或靠近顶部，很可能是弹窗
-        val isNearCenter = centerDistance < windowWidth * 0.3
-        val isNearTop = rect.top < windowHeight * 0.2
+        // If near center or top, likely a popup
+        val isNearCenter = centerDistance < windowWidth * POPUP_CENTER_DISTANCE_RATIO
+        val isNearTop = rect.top < windowHeight * POPUP_TOP_AREA_THRESHOLD
         
-        // 同时检查是否有阴影或边框特征（通过检查父节点）
+        // Also check for shadow or border characteristics (via parent nodes)
         val hasParentWithAlpha = checkParentWithAlpha(node)
         
         return (isNearCenter || isNearTop) && hasParentWithAlpha
     }
 
-        /** 检查父节点是否具有透明度或阴影特征（弹窗常见特征） */
+        /** Check if parent nodes have characteristics typical of popups (dialog, modal, etc.). */
     private fun checkParentWithAlpha(node: AccessibilityNodeInfo): Boolean {
         var parent: AccessibilityNodeInfo? = node.parent
-        repeat(3) {
+        repeat(CLOSE_SYMBOL_MAX_WALK_DEPTH) {
             parent?.let { currentParent ->
-                // 检查父节点是否有弹窗相关属性
+                // Check if parent has popup-related properties
                 val className = currentParent.className?.toString()?.lowercase() ?: ""
                 if (className.contains("dialog") || className.contains("popup") || 
                     className.contains("modal") || className.contains("overlay")) {
@@ -404,7 +428,7 @@ class AutoNextService : AccessibilityService() {
 
     // ---- Utilities --------------------------------------------------------
 
-    /** Performs a BFS traversal and invokes [action] for each node. */
+    /** Performs a BFS traversal and invokes [action] for each node. Note: does not recycle child nodes retrieved by getChild(). */
     private fun bfs(root: AccessibilityNodeInfo, action: (AccessibilityNodeInfo) -> Unit) {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)

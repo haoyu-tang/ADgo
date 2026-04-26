@@ -8,12 +8,21 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.Toast
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
@@ -122,6 +131,10 @@ class AutoNextService : AccessibilityService() {
 
     private var accessibilityButtonCallback: AccessibilityButtonController.AccessibilityButtonCallback? = null
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var bannerView: LinearLayout? = null
+    private val dismissBannerRunnable = Runnable { dismissBanner() }
+
     /** Identifies the current top-level window by "package/class" so counters reset on window change. */
     private var currentWindowToken = ""
     @Volatile private var clickCountThisWindow = 0
@@ -175,6 +188,7 @@ class AutoNextService : AccessibilityService() {
 
     override fun onDestroy() {
         unregisterAccessibilityButton()
+        dismissBanner()
         hideStatusNotification()
         super.onDestroy()
     }
@@ -503,8 +517,10 @@ class AutoNextService : AccessibilityService() {
         isPaused = !isPaused
         updateAppIcon(paused = isPaused)
         updateStatusNotification()
-        val msg = if (isPaused) R.string.toast_paused else R.string.toast_resumed
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        showBanner(
+            if (isPaused) getString(R.string.toast_paused) else getString(R.string.toast_resumed),
+            paused = isPaused
+        )
         Log.i(TAG, if (isPaused) "Auto-skip PAUSED" else "Auto-skip RESUMED")
     }
 
@@ -532,6 +548,70 @@ class AutoNextService : AccessibilityService() {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to switch app icon", e)
         }
+    }
+
+    // ---- Top overlay banner ------------------------------------------------
+
+    private fun showBanner(message: String, paused: Boolean) {
+        dismissBanner()
+
+        val wm = getSystemService(WINDOW_SERVICE) as? WindowManager ?: return
+        val density = resources.displayMetrics.density
+
+        val bgColor = if (paused) Color.parseColor("#E6FF9800") else Color.parseColor("#E64CAF50")
+        val bg = GradientDrawable().apply {
+            setColor(bgColor)
+            cornerRadius = 12 * density
+        }
+
+        val tv = TextView(this).apply {
+            text = message
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            gravity = Gravity.CENTER
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = bg
+            gravity = Gravity.CENTER
+            val hPad = (24 * density).toInt()
+            val vPad = (12 * density).toInt()
+            setPadding(hPad, vPad, hPad, vPad)
+            addView(tv)
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = (48 * density).toInt()
+        }
+
+        try {
+            wm.addView(container, params)
+            bannerView = container
+            mainHandler.removeCallbacks(dismissBannerRunnable)
+            mainHandler.postDelayed(dismissBannerRunnable, 3000L)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to show banner", e)
+        }
+    }
+
+    private fun dismissBanner() {
+        bannerView?.let { v ->
+            try {
+                val wm = getSystemService(WINDOW_SERVICE) as? WindowManager
+                wm?.removeView(v)
+            } catch (_: Exception) { }
+        }
+        bannerView = null
+        mainHandler.removeCallbacks(dismissBannerRunnable)
     }
 
     // ---- Notification -----------------------------------------------------

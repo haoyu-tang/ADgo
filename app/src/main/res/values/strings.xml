@@ -38,6 +38,10 @@ tv.danmaku.bili</string>
     <string name="notif_channel_desc">Shows whether ADgo accessibility service is running</string>
     <string name="notif_title_enabled">ADgo is running</string>
     <string name="notif_text_enabled">Accessibility auto-skip service is enabled</string>
+    <string name="notif_title_paused">ADgo is paused</string>
+    <string name="notif_text_paused">Tap the accessibility button to resume</string>
+    <string name="toast_paused">ADgo auto-skip paused</string>
+    <string name="toast_resumed">ADgo auto-skip resumed</string>
 
     <!-- AccessibilityService description shown in system settings -->
     <string name="accessibility_service_description">ADgo monitors on-screen content and automatically taps ad skip buttons (Next / Skip / 下一步 / 跳过).</string>

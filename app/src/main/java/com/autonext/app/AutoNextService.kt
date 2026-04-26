@@ -1,15 +1,19 @@
 package com.autonext.app
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityButtonController
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
@@ -114,6 +118,9 @@ class AutoNextService : AccessibilityService() {
     // ---- Runtime state ----------------------------------------------------
 
     @Volatile private var lastClickTimeMs = 0L
+    @Volatile private var isPaused = false
+
+    private var accessibilityButtonCallback: AccessibilityButtonController.AccessibilityButtonCallback? = null
 
     /** Identifies the current top-level window by "package/class" so counters reset on window change. */
     private var currentWindowToken = ""
@@ -130,6 +137,7 @@ class AutoNextService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         showStatusNotification()
+        registerAccessibilityButton()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -166,11 +174,13 @@ class AutoNextService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        unregisterAccessibilityButton()
         hideStatusNotification()
         super.onDestroy()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        unregisterAccessibilityButton()
         hideStatusNotification()
         return super.onUnbind(intent)
     }
@@ -178,6 +188,7 @@ class AutoNextService : AccessibilityService() {
     // ---- Scan and click ---------------------------------------------------
 
     private fun scanAndClick(event: AccessibilityEvent) {
+        if (isPaused) return
         // Throttle if this window already reached the click limit or the last click was too recent.
         if (clickCountThisWindow >= MAX_CLICKS_PER_WINDOW) return
         val now = System.currentTimeMillis()
@@ -462,6 +473,69 @@ class AutoNextService : AccessibilityService() {
         return false
     }
 
+    // ---- Accessibility button (system shortcut) ----------------------------
+
+    private fun registerAccessibilityButton() {
+        val controller = accessibilityButtonController ?: return
+        val callback = object : AccessibilityButtonController.AccessibilityButtonCallback() {
+            override fun onClicked(controller: AccessibilityButtonController) {
+                togglePause()
+            }
+
+            override fun onAvailabilityChanged(
+                controller: AccessibilityButtonController,
+                available: Boolean
+            ) {
+                Log.d(TAG, "Accessibility button available=$available")
+            }
+        }
+        controller.registerAccessibilityButtonCallback(callback)
+        accessibilityButtonCallback = callback
+    }
+
+    private fun unregisterAccessibilityButton() {
+        val controller = accessibilityButtonController ?: return
+        accessibilityButtonCallback?.let { controller.unregisterAccessibilityButtonCallback(it) }
+        accessibilityButtonCallback = null
+    }
+
+    private fun togglePause() {
+        isPaused = !isPaused
+        updateAppIcon(paused = isPaused)
+        updateStatusNotification()
+        val msg = if (isPaused) R.string.toast_paused else R.string.toast_resumed
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        Log.i(TAG, if (isPaused) "Auto-skip PAUSED" else "Auto-skip RESUMED")
+    }
+
+    /**
+     * Switches the launcher icon (and thus the system accessibility button icon)
+     * between active and paused states via activity-alias toggling.
+     */
+    private fun updateAppIcon(paused: Boolean) {
+        val pm = packageManager
+        val pkg = packageName
+        val enableAlias = if (paused) ".MainActivityPaused" else ".MainActivityActive"
+        val disableAlias = if (paused) ".MainActivityActive" else ".MainActivityPaused"
+
+        try {
+            pm.setComponentEnabledSetting(
+                ComponentName(pkg, "$pkg$disableAlias"),
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            pm.setComponentEnabledSetting(
+                ComponentName(pkg, "$pkg$enableAlias"),
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to switch app icon", e)
+        }
+    }
+
+    // ---- Notification -----------------------------------------------------
+
     private fun showStatusNotification() {
         ensureStatusNotificationChannel()
 
@@ -475,9 +549,39 @@ class AutoNextService : AccessibilityService() {
         )
 
         val notification = NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setSmallIcon(R.drawable.ic_notif_active)
             .setContentTitle(getString(R.string.notif_title_enabled))
             .setContentText(getString(R.string.notif_text_enabled))
+            .setContentIntent(contentIntent)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        NotificationManagerCompat.from(this).notify(STATUS_NOTIFICATION_ID, notification)
+    }
+
+    private fun updateStatusNotification() {
+        ensureStatusNotificationChannel()
+
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val titleRes = if (isPaused) R.string.notif_title_paused else R.string.notif_title_enabled
+        val textRes = if (isPaused) R.string.notif_text_paused else R.string.notif_text_enabled
+        val icon = if (isPaused) R.drawable.ic_notif_paused else R.drawable.ic_notif_active
+
+        val notification = NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
+            .setSmallIcon(icon)
+            .setContentTitle(getString(titleRes))
+            .setContentText(getString(textRes))
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setAutoCancel(false)

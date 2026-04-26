@@ -16,11 +16,37 @@
         <activity
             android:name=".MainActivity"
             android:exported="true">
+        </activity>
+
+        <!-- Launcher alias: active state (purple background, normal arrow) -->
+        <activity-alias
+            android:name=".MainActivityActive"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <!-- Launcher alias: paused state (gray background, slashed arrow) -->
+        <activity-alias
+            android:name=".MainActivityPaused"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_paused"
+            android:roundIcon="@mipmap/ic_launcher_paused_round"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".AutoNextService"

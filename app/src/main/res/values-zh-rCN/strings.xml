@@ -38,6 +38,10 @@ tv.danmaku.bili</string>
     <string name="notif_channel_desc">显示 ADgo 无障碍服务是否正在运行</string>
     <string name="notif_title_enabled">ADgo 正在运行</string>
     <string name="notif_text_enabled">无障碍自动跳过服务已开启</string>
+    <string name="notif_title_paused">ADgo 已暂停</string>
+    <string name="notif_text_paused">点击无障碍按钮恢复</string>
+    <string name="toast_paused">ADgo 自动跳过已暂停</string>
+    <string name="toast_resumed">ADgo 自动跳过已恢复</string>
 
     <string name="accessibility_service_description">ADgo 将监测屏幕内容，自动识别并点击广告跳过按钮（Next / Skip / 下一步 / 跳过）。</string>
 </resources>

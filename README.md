@@ -1,102 +1,160 @@
-# ADgo - Automatic Ad Popup Dismisser
+# ADgo — Automatic Ad Skip & Popup Dismisser
 
-ADgo is an Android accessibility service application that automatically detects and dismisses popup advertisements by clicking the close button. It uses intelligent context analysis to ensure that only legitimate ad popups are closed.
+ADgo is an Android accessibility-service app that automatically detects and taps **Skip / Next / Close** buttons on in-app ads. It combines text + view-ID matching, ad-context keyword analysis, and layout-based popup validation to keep false positives low.
+
+---
+
+## How It Works
+
+```
+Accessibility Event
+  ├─ TYPE_WINDOW_STATE_CHANGED   ─┐
+  ├─ TYPE_WINDOW_CONTENT_CHANGED ─┼─▶ scanAndClick()
+  └─ TYPE_WINDOWS_CHANGED        ─┘
+        │
+        ▼
+   findCandidate()  ── BFS over node tree
+        │
+        ├─ P1  text + viewId match  (highest confidence)
+        ├─ P2  text match only
+        ├─ P3  viewId match only
+        └─ P4  close-icon heuristic
+              ├─ symbol / hint match
+              ├─ ad-context keyword check
+              └─ popup layout validation
+        │
+        ▼
+   doClick()  ── ACTION_CLICK (or walk up to clickable parent)
+```
+
+### Safety Guards
+
+| Guard | Description |
+|-------|-------------|
+| **Blacklist terms** | Rejects nodes containing payment / checkout keywords (支付, 购买, buy, checkout …) |
+| **Package deny-list** | Never processes system UI, Settings, Play Store, or the app itself |
+| **Per-window click cap** | Max 5 auto-clicks per foreground window |
+| **Node dedup** | Same node is never clicked twice in one window session |
+| **Throttle** | 800 ms minimum between consecutive clicks |
+| **Ad-context requirement** | Close-icon path requires ad-related keywords nearby in the node tree |
+| **Layout validation** | Close-icon path also checks popup proportions and dialog/modal ancestors |
+
+---
 
 ## Features
 
-- **Automatic Popup Detection**: Uses Android Accessibility Service to monitor window content changes and detect popup windows
-- **Smart Ad Detection**: Only closes popups that contain ad-related keywords (广告/廣告/赞助/贊助 - ad/sponsor)
-- **Smart Close Button Detection**: Recognizes various close button patterns (x, ×, ✕, ✖ symbols and close-related text/IDs)
-- **Package Allowlist/Blocklist**: Configure which apps should have popups automatically closed
-  - Allowlist mode: Only close popups in selected apps
-  - Blocklist mode (default): Close popups in all apps except those on the blocklist
-- **Search Functionality**: Quick search to find and select apps from the installed applications list
-- **Package Editor**: Normalize and clear package lists with bulk operations
-- **Dynamic App Sorting**: Selected apps appear at the top of the app selection list
-- **Multi-Language Support**:
-  - English (default)
-  - Simplified Chinese (中文简体)
-  - Traditional Chinese (中文繁體)
-  - Auto-detects system language
-- **Service Status Indicator**: 
-  - Display status in main UI (Enabled/Disabled)
-  - Notification bar status indicator shows when the service is active
-- **Auto-Save**: Option to automatically save configuration changes
-- **Notification Permission**: Properly handles runtime permissions for Android 13+
+- **Skip / Next detection** — recognizes "skip", "next", "跳过", "下一步" in node text and common view-ID patterns (`btn_skip`, `ad_skip`, …).
+- **Smart close-button detection** — matches `×`, `✕`, `✖`, "close", "关闭" symbols and view-IDs, but only acts when ad-context keywords (广告, 廣告, 赞助, Sponsored, Banner …) are present nearby.
+- **Popup layout heuristic** — validates that the close target sits inside a dialog/popup/modal overlay occupying 10–80 % of screen width and 10–60 % of height.
+- **Package allowlist / blocklist** — default is blocklist mode (all apps minus deny-list). Switch to allowlist mode to restrict auto-skip to selected apps only.
+- **App selector dialog** — searchable multi-choice list with Select All / Invert / Clear bulk actions.
+- **Package editor** — free-text editor with deduplicate-and-sort and clear utilities.
+- **Pause / resume** — tap the system accessibility button to toggle; launcher icon switches between active (purple) and paused (gray) states via activity-alias.
+- **Overlay banner** — transient top banner shows pause/resume feedback.
+- **Status notification** — persistent low-priority notification while the service is running.
+- **Auto-save** — optional; saves rule changes immediately without pressing Save.
+- **Multi-language** — English (default), Simplified Chinese, Traditional Chinese; auto-detects system locale.
+- **Android 13+ notification permission** — requests `POST_NOTIFICATIONS` at runtime.
+
+---
+
+## Project Structure
+
+```
+app/src/main/
+├── AndroidManifest.xml          # Permissions, activity-aliases (active/paused icons), service declaration
+├── java/com/autonext/app/
+│   ├── AutoNextService.kt       # Core accessibility service — event handling, BFS scan, click logic
+│   └── MainActivity.kt          # Configuration UI — allowlist, app selector, package editor, status
+└── res/
+    ├── layout/
+    │   ├── activity_main.xml         # Main settings screen
+    │   ├── dialog_app_selector.xml   # Searchable app-picker dialog
+    │   ├── dialog_package_editor.xml # Raw package-text editor dialog
+    │   └── item_app_selector.xml     # Single row in the app-picker list
+    ├── xml/
+    │   └── accessibility_service_config.xml  # Accessibility service capabilities
+    ├── values/strings.xml            # English strings
+    ├── values-zh-rCN/strings.xml     # Simplified Chinese
+    └── values-zh-rTW/strings.xml     # Traditional Chinese
+```
+
+---
 
 ## Requirements
 
-### System Requirements
-- **Android SDK**: Compiled with SDK 36, supports devices running Android 8.0+ (minSdk 26)
-- **Java/Kotlin**: JDK 17+ (Eclipse Adoptium recommended)
-- **Gradle**: 8.5.2+
+### Device
+- Android 8.0+ (API 26)
 
-### Build Dependencies
-- Android Gradle Plugin: 8.5.2
-- Kotlin: 1.9.24
-- Android SDK 36
+### Build Environment
+- JDK 17+ (Eclipse Adoptium recommended)
+- Android SDK — API 36
+- Gradle 8.5.2+ (wrapper included)
+- Android Gradle Plugin 8.5.2
+- Kotlin 1.9.24
 
-### Runtime Dependencies (AndroidX/Google)
-- androidx.core:core-ktx:1.13.1
-- androidx.appcompat:appcompat:1.7.0
-- com.google.android.material:material:1.12.0
-- androidx.constraintlayout:constraintlayout:2.1.4
+### Runtime Dependencies
+| Library | Version |
+|---------|---------|
+| `androidx.core:core-ktx` | 1.13.1 |
+| `androidx.appcompat:appcompat` | 1.7.0 |
+| `com.google.android.material:material` | 1.12.0 |
+| `androidx.constraintlayout:constraintlayout` | 2.1.4 |
 
-### Required Permissions
-- `android.permission.QUERY_ALL_PACKAGES` - Query all installed applications
-- `android.permission.POST_NOTIFICATIONS` - Show status notifications (Android 13+)
-- Accessibility Service permission - Must be manually enabled in device Settings
+### Permissions
+| Permission | Purpose |
+|------------|---------|
+| `QUERY_ALL_PACKAGES` | Enumerate installed apps for the selector dialog |
+| `POST_NOTIFICATIONS` | Status notification (requested at runtime on Android 13+) |
+| Accessibility Service | Must be enabled manually in **Settings → Accessibility** |
+
+---
 
 ## Building
 
-### Prerequisites
-1. Install JDK 17+ (Eclipse Adoptium or Oracle JDK)
-2. Install Android SDK (API 36) via Android Studio SDK Manager
-3. Configure gradle.properties with your JDK path (if not set)
-
-### Build Commands
-
-**Debug APK** (development build):
 ```bash
+# Debug APK
 ./gradlew assembleDebug
-```
-Output: `app/build/outputs/apk/debug/app-debug.apk`
+# → app/build/outputs/apk/debug/app-debug.apk
 
-**Release APK** (optimized build):
-```bash
+# Release APK (output renamed to ADgo.apk)
 ./gradlew assembleRelease
-```
-Output: `app/build/outputs/apk/release/ADgo.apk`
+# → app/build/outputs/apk/release/ADgo.apk
 
-**Full Clean Build**:
-```bash
+# Clean + release
 ./gradlew clean assembleRelease
-```
 
-**Run Tests**:
-```bash
+# Run unit tests
 ./gradlew test
-```
 
-**Install on Connected Device** (debug):
-```bash
+# Install debug build on a connected device
 ./gradlew installDebug
 ```
 
 ### Build Configuration
-- Source compatibility: Java 1.8
-- Target compatibility: Java 1.8
-- View Binding: Enabled
-- Proguard: Enabled (release builds)
-- Signing: Uses debug keystore
+| Setting | Value |
+|---------|-------|
+| Source / target compatibility | Java 1.8 |
+| View Binding | Enabled |
+| Proguard | Configured (release builds) |
+| Signing | Debug keystore |
 
-## Release APK Location
+---
 
-After building with `./gradlew assembleRelease`, the release APK is located at:
+## Usage
 
-```
-app/build/outputs/apk/release/ADgo.apk
-```
+1. Install the APK and open **ADgo**.
+2. Tap **Enable Accessibility Service** → find "ADgo" in the list → enable it.
+3. Return to the app — the status label shows **Enabled**.
+4. *(Optional)* Switch to **allowlist mode** and pick which apps should be monitored.
+5. Ads with Skip / Next / Close buttons will be dismissed automatically.
+6. Use the **accessibility button** (system navigation bar) to pause / resume at any time.
+
+---
+
+## License
+
+See repository for license details.
 
 **File details:**
 - Filename: `ADgo.apk`
@@ -283,6 +341,6 @@ For bug reports, feature requests, or questions, please mait to haoyu.tang@live.
 
 ---
 
-**Last Updated**: 2026-04-08  
+**Last Updated**: 2026-04-27  
 **Tested On**: Android 8.0 - Android 14 (API 26 - API 34)  
 **Build Status**: ✅ Passing (No compilation errors)

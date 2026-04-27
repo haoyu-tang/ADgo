@@ -23,23 +23,56 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.autonext.app.databinding.ActivityMainBinding
 
+/**
+ * MainActivity — single-screen configuration UI for ADgo.
+ *
+ * Responsibilities:
+ *  • Displays the current accessibility-service status and provides a button to
+ *    jump into system Accessibility Settings.
+ *  • Lets the user switch between allowlist/blocklist mode and select which
+ *    packages the auto-skip engine should act on.
+ *  • Persists configuration to [SharedPreferences] (manual save or auto-save).
+ *  • Requests POST_NOTIFICATIONS permission on Android 13+.
+ *
+ * Layout: [R.layout.activity_main] — a scrollable form with switches, buttons,
+ * and a read-only package preview area.
+ */
 class MainActivity : AppCompatActivity() {
 
+    // ---- View-binding & UI state -----------------------------------------
+
     private lateinit var binding: ActivityMainBinding
+
+    /** Guards against auto-save triggers while [loadRules] is populating the UI. */
     private var loadingUi = false
+
+    /** Tracks the last known service state so [onResume] can show a toast only on actual change. */
     private var lastKnownServiceEnabled: Boolean? = null
+
+    // ---- Constants -------------------------------------------------------
 
     companion object {
         private const val KEY_AUTO_SAVE_ENABLED = "key_auto_save_enabled"
         private const val DEFAULT_AUTO_SAVE_ENABLED = true
+        /** Request code for the POST_NOTIFICATIONS runtime permission dialog. */
         private const val REQ_POST_NOTIFICATIONS = 2001
     }
 
+    // ---- Data class for the app-selector dialog -------------------------
+
+    /** Lightweight model representing an installed app shown in the selector list. */
     private data class AppItem(
         val label: String,
         val packageName: String
     )
 
+    /**
+     * Adapter for the multi-choice app-selector dialog.
+     *
+     * Each row shows "AppLabel\npackage.name" with a checkbox that reflects
+     * membership in [selectedPackages]. Selected items are sorted to the top
+     * whenever the filter query changes.
+     */
     private class AppSelectorAdapter(
         private val inflater: LayoutInflater,
         private val selectedPackages: Set<String>
@@ -69,6 +102,8 @@ class MainActivity : AppCompatActivity() {
             return view
         }
     }
+
+    // ---- Activity lifecycle -----------------------------------------------
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,6 +151,9 @@ class MainActivity : AppCompatActivity() {
         refreshServiceStatus(showChangeToast = true)
     }
 
+    // ---- Bulk-selection helpers -------------------------------------------
+
+    /** Switches to allowlist mode and adds every user-installed app. */
     private fun selectAllApps() {
         val apps = loadInstalledApps()
         if (apps.isEmpty()) {
@@ -127,6 +165,7 @@ class MainActivity : AppCompatActivity() {
         maybeAutoSave()
     }
 
+    /** Inverts the current selection: selects all unselected apps and deselects all selected ones. */
     private fun invertSelectedApps() {
         val apps = loadInstalledApps()
         if (apps.isEmpty()) {
@@ -140,11 +179,18 @@ class MainActivity : AppCompatActivity() {
         maybeAutoSave()
     }
 
+    /** Clears the package preview and triggers auto-save if enabled. */
     private fun clearSelectedApps() {
         setPackagePreview("")
         maybeAutoSave()
     }
 
+    // ---- Dialogs ----------------------------------------------------------
+
+    /**
+     * Opens a searchable multi-choice dialog listing all installed apps.
+     * Selected packages are collected on OK and written to the package preview.
+     */
     private fun openAppSelectorDialog() {
         val apps = loadInstalledApps()
         if (apps.isEmpty()) {
@@ -212,6 +258,10 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * Opens a free-text editor dialog for the raw package list.
+     * Includes "Normalize" (deduplicate + sort) and "Clear" utility buttons.
+     */
     private fun openPackageEditorDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_package_editor, null)
         val editor = dialogView.findViewById<EditText>(R.id.et_package_editor)
@@ -241,6 +291,12 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // ---- Installed-app enumeration ----------------------------------------
+
+    /**
+     * Returns a sorted list of user-visible installed apps (excluding this app).
+     * Apps are included if they have a launch intent or are enabled.
+     */
     @Suppress("DEPRECATION")
     private fun loadInstalledApps(): List<AppItem> {
         return packageManager.getInstalledApplications(0)
@@ -260,6 +316,9 @@ class MainActivity : AppCompatActivity() {
             .toList()
     }
 
+    // ---- SharedPreferences persistence ------------------------------------
+
+    /** Populates UI controls from [SharedPreferences]. Sets [loadingUi] to suppress auto-save during load. */
     private fun loadRules() {
         loadingUi = true
         val prefs = getSharedPreferences(AutoNextService.PREFS_NAME, MODE_PRIVATE)
@@ -283,6 +342,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Writes the current allowlist switch, auto-save switch, and package text to [SharedPreferences]. */
     private fun saveRules(showToast: Boolean = true) {
         val prefs = getSharedPreferences(AutoNextService.PREFS_NAME, MODE_PRIVATE)
         prefs.edit()
@@ -296,6 +356,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Silently saves when auto-save is on; no-op while the UI is being populated by [loadRules]. */
     private fun maybeAutoSave() {
         if (loadingUi) return
         if (binding.switchAutoSave.isChecked) {
@@ -303,6 +364,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---- Service status helpers -------------------------------------------
+
+    /**
+     * Reads the accessibility-service enabled state and updates the status label and button text.
+     * Optionally shows a toast when the state differs from the previously known value.
+     */
     private fun refreshServiceStatus(showChangeToast: Boolean) {
         val enabled = isAccessibilityServiceEnabled()
         val statusText = if (enabled) {
@@ -329,6 +396,10 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, messageRes, Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * Checks [Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES] for this app’s
+     * [AutoNextService] component. Returns `true` if the service is currently enabled.
+     */
     private fun isAccessibilityServiceEnabled(): Boolean {
         val enabledServices = Settings.Secure.getString(
             contentResolver,
@@ -342,6 +413,9 @@ class MainActivity : AppCompatActivity() {
             .any { it.equals(componentName, ignoreCase = true) }
     }
 
+    // ---- Notification permission (Android 13+) ----------------------------
+
+    /** Requests POST_NOTIFICATIONS at runtime on API 33+; silently returns on older versions. */
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         val granted = ContextCompat.checkSelfPermission(
@@ -357,11 +431,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---- Package-text helpers ---------------------------------------------
+
+    /** Returns the current package preview text, or empty if showing the placeholder. */
     private fun getPackageText(): String {
         val current = binding.etAllowlistPackages.text?.toString().orEmpty()
         return if (current == getString(R.string.allowlist_preview_empty)) "" else current
     }
 
+    /** Normalizes [value] and displays it in the preview area (or shows the placeholder when empty). */
     private fun setPackagePreview(value: String) {
         val normalized = normalizePackageText(value)
         binding.etAllowlistPackages.text = if (normalized.isBlank()) {
@@ -371,11 +449,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Deduplicates, sorts, and joins package names back into newline-separated text. */
     private fun normalizePackageText(raw: String): String =
         parsePackageInput(raw)
             .sorted()
             .joinToString("\n")
 
+    /** Splits raw input on newlines, commas, and semicolons; trims and removes blanks. */
     private fun parsePackageInput(raw: String): Set<String> =
         raw.split('\n', ',', ';')
             .map { it.trim() }

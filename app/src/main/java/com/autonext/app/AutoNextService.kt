@@ -27,15 +27,31 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
 /**
- * AutoNextService - ad auto-skip engine.
+ * AutoNextService — core ad auto-skip engine powered by Android Accessibility.
  *
- * How it works:
- *  1. Listens for global window state/content change events across all foreground apps.
- *  2. Runs a BFS traversal on each event's node tree and uses combined text + view ID matching
- *     to locate Skip/Next buttons.
- *  3. Performs ACTION_CLICK on a match, or falls back to the nearest clickable parent when needed.
- *  4. Uses payment/purchase blacklist terms to avoid false taps, and throttles repeat clicks on
- *     the same screen.
+ * Lifecycle:
+ *  [onServiceConnected] → posts a persistent status notification and registers the
+ *  system accessibility button so the user can pause/resume with one tap.
+ *
+ * Event processing pipeline:
+ *  1. Listens for TYPE_WINDOW_STATE_CHANGED, TYPE_WINDOW_CONTENT_CHANGED, and
+ *     TYPE_WINDOWS_CHANGED events across all foreground apps.
+ *  2. [scanAndClick] throttles by interval and per-window click count, then delegates
+ *     to [findCandidate] which performs a BFS traversal of the node tree.
+ *  3. Node matching uses a priority system:
+ *       P1 – both text AND view-ID match (highest confidence)
+ *       P2 – text match only
+ *       P3 – view-ID match only
+ *       P4 – close-icon heuristic (symbol + ad-context + popup-layout validation)
+ *  4. [doClick] performs ACTION_CLICK on the candidate, walking up to
+ *     [MAX_PARENT_WALK_DEPTH] ancestors if the node itself is not clickable.
+ *
+ * Safety guards:
+ *  • [BLACKLIST_TEXTS] rejects payment / checkout nodes to prevent accidental purchases.
+ *  • [PACKAGE_DENYLIST] skips system UI, settings, and the app itself.
+ *  • Per-window click cap ([MAX_CLICKS_PER_WINDOW]) and dedup via [clickedNodeKeys].
+ *  • Popup close actions require ad-context keywords ([AD_CONTEXT_HINTS]) **and**
+ *    layout-based popup validation ([isPopupBasedOnLayout]).
  */
 class AutoNextService : AccessibilityService() {
 
@@ -46,24 +62,24 @@ class AutoNextService : AccessibilityService() {
         const val KEY_ALLOWLIST_ENABLED = "key_allowlist_enabled"
         const val KEY_ALLOWLIST_TEXT = "key_allowlist_text"
 
-        /** Target text keywords matched case-insensitively by substring. */
+        /** Skip/Next button text keywords; matched case-insensitively by substring against merged node labels. */
         private val TARGET_TEXTS = listOf(
             "skip", "next", "跳过", "下一步"
         )
 
-        /** Target view ID fragments matched against viewIdResourceName by case-insensitive substring. */
+        /** Skip/Next view-ID fragments; matched case-insensitively against [AccessibilityNodeInfo.viewIdResourceName]. */
         private val TARGET_VIEW_IDS = listOf(
             "skip", "next", "btn_skip", "btn_next",
             "ad_skip", "skip_btn", "next_btn"
         )
 
-        /** Close-related text/viewId hints, used only with ad-context validation. */
+        /** Close-related text / viewId hints — only acted on when ad-context ([AD_CONTEXT_HINTS]) is confirmed nearby. */
         private val CLOSE_HINTS = listOf(
             "close", "关闭", "關閉", "ad_close", "close_ad", "btn_close", "iv_close",
             "img_close", "close_btn", "dialog_close", "popup_close"
         )
 
-                /** Enhanced popup context must contain ad/sponsored words before any close action is allowed. */
+        /** Ad-context keywords; the popup close path requires at least one match in the surrounding node tree. */
         private val AD_CONTEXT_HINTS = listOf(
             "广告", "廣告", "赞助", "贊助", "AD", "Promotion", 
             "Advertisement", "Sponsored", "Banner", "Popup",
@@ -71,34 +87,36 @@ class AutoNextService : AccessibilityService() {
         )
 
         /**
-         * Blacklist text fragments. Even if the text or ID matches, any node containing one of
-         * these terms will be rejected to avoid tapping payment or checkout buttons.
+         * Blacklist text fragments — any node whose merged label contains one of these terms is
+         * unconditionally rejected, even if it otherwise matches skip/next/close patterns.
+         * Prevents accidental taps on payment, checkout, or VIP-purchase buttons.
          */
         private val BLACKLIST_TEXTS = listOf(
             "支付", "购买", "下单", "确认支付", "立即购买", "去结算", "加入", "会员",
             "pay", "purchase", "buy", "checkout", "place order", "VIP", "Join"
         )
 
-        private const val MIN_CLICK_INTERVAL_MS = 800L  // Minimum interval between clicks.
-        private const val MAX_CLICKS_PER_WINDOW = 5     // Maximum auto-clicks allowed per window.
-        private const val MAX_PARENT_WALK_DEPTH = 5     // Maximum parent depth to search for a clickable ancestor.
+        private const val MIN_CLICK_INTERVAL_MS = 800L  // Global cooldown between consecutive auto-clicks (ms).
+        private const val MAX_CLICKS_PER_WINDOW = 5     // Cap auto-clicks per window token to limit runaway taps.
+        private const val MAX_PARENT_WALK_DEPTH = 5     // How far up the tree [doClick] walks to find a clickable ancestor.
         private const val STATUS_NOTIFICATION_ID = 1001
         private const val STATUS_CHANNEL_ID = "adgo_service_status"
 
         /**
-         * When enabled, service only runs for packages that match [PACKAGE_ALLOWLIST].
-         * Keep disabled by default to support all apps.
+         * Master toggle for package-allowlist mode. When `false` (default) the service
+         * monitors every foreground app (minus [PACKAGE_DENYLIST]). When `true`, only
+         * packages matching the user-configured allowlist are processed.
          */
         const val DEFAULT_ENABLE_PACKAGE_ALLOWLIST = false
 
-        /** Optional package fragments to allow when allowlist mode is enabled. */
+        /** Default package fragments shipped with the app; used when the user has not customized the allowlist. */
         val DEFAULT_ALLOWLIST = listOf(
             "com.ss.android",
             "com.tencent",
             "tv.danmaku.bili"
         )
 
-        /** Always blocked package fragments to avoid risky taps in system or purchase flows. */
+        /** Hard-coded deny list — these packages are never processed regardless of allowlist settings. */
         private val PACKAGE_DENYLIST = listOf(
             "com.autonext.app",
             "com.android.systemui",
@@ -108,7 +126,7 @@ class AutoNextService : AccessibilityService() {
             "com.android.vending"
         )
 
-        // Layout detection thresholds for popup validation
+        // ---- Layout detection thresholds for popup validation ----
         private const val POPUP_MIN_WIDTH_RATIO = 0.1
         private const val POPUP_MAX_WIDTH_RATIO = 0.8
         private const val POPUP_MIN_HEIGHT_RATIO = 0.1
@@ -120,13 +138,18 @@ class AutoNextService : AccessibilityService() {
         private const val PARENT_WALK_DEPTH_FOR_CONTEXT = 3
         private const val CLOSE_SYMBOL_MAX_WALK_DEPTH = 3
 
-        /** Close button symbols. */
+        /** Single-character close-button symbols recognized as potential close icons. */
         private val CLOSE_SYMBOLS = setOf("x", "×", "✕", "✖")
     }
 
-    // ---- Runtime state ----------------------------------------------------
+    // ====================================================================
+    // Runtime state
+    // ====================================================================
 
+    /** Epoch millis of the most recent successful auto-click (global throttle). */
     @Volatile private var lastClickTimeMs = 0L
+
+    /** When `true` the scan loop short-circuits; toggled via the accessibility button. */
     @Volatile private var isPaused = false
 
     private var accessibilityButtonCallback: AccessibilityButtonController.AccessibilityButtonCallback? = null
@@ -135,17 +158,22 @@ class AutoNextService : AccessibilityService() {
     private var bannerView: LinearLayout? = null
     private val dismissBannerRunnable = Runnable { dismissBanner() }
 
-    /** Identifies the current top-level window by "package/class" so counters reset on window change. */
+    /**
+     * Composite "package/class" token of the current foreground window.
+     * Resets [clickCountThisWindow] and [clickedNodeKeys] on change.
+     */
     private var currentWindowToken = ""
     @Volatile private var clickCountThisWindow = 0
 
     /**
-     * Tracks identity hash codes for clicked nodes in the current window to avoid duplicate taps.
-     * AccessibilityNodeInfo instances are short-lived, so hashCode is sufficient here.
+     * Identity-hash-code set of nodes already clicked in the current window.
+     * Prevents duplicate taps on the same UI element across rapid events.
      */
     private val clickedNodeKeys = mutableSetOf<Int>()
 
-    // ---- AccessibilityService callbacks -----------------------------------
+    // ====================================================================
+    // AccessibilityService lifecycle callbacks
+    // ====================================================================
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -199,7 +227,9 @@ class AutoNextService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
-    // ---- Scan and click ---------------------------------------------------
+    // ====================================================================
+    // Scan-and-click pipeline
+    // ====================================================================
 
     private fun scanAndClick(event: AccessibilityEvent) {
         if (isPaused) return
@@ -229,13 +259,20 @@ class AutoNextService : AccessibilityService() {
         }
     }
 
-    // ---- Node lookup ------------------------------------------------------
+    // ====================================================================
+    // Node lookup — BFS candidate selection
+    // ====================================================================
 
     /**
-     * Traverses the node tree with BFS and returns the best candidate by priority:
-        *  Priority 1: both text and view ID match (highest confidence).
-        *  Priority 2: text match only (high confidence).
-        *  Priority 3: view ID match only (fallback).
+     * Performs a BFS traversal of the accessibility node tree starting at [root].
+     *
+     * Returns the single best candidate node using a strict priority order:
+     *  P1 – text **and** view-ID both match a skip/next pattern (highest confidence).
+     *  P2 – text matches only.
+     *  P3 – view-ID matches only.
+     *  P4 – close-icon heuristic (symbol/text/id hit + ad-context + popup-layout check).
+     *
+     * Blacklisted nodes are silently skipped so payment buttons are never returned.
      */
     private fun findCandidate(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var textAndId: AccessibilityNodeInfo? = null
@@ -267,7 +304,9 @@ class AutoNextService : AccessibilityService() {
         return textAndId ?: textOnly ?: idOnly ?: closeIcon
     }
 
-    // ---- Matching predicates ----------------------------------------------
+    // ====================================================================
+    // Matching predicates
+    // ====================================================================
 
     private fun isTargetText(text: String): Boolean =
         text.isNotBlank() && TARGET_TEXTS.any { text.contains(it, ignoreCase = true) }
@@ -340,7 +379,11 @@ class AutoNextService : AccessibilityService() {
         return sb.toString()
     }
 
-    /** Package-level gating to reduce accidental clicks on sensitive/system screens. */
+    /**
+     * Package-level gating.
+     * Returns `false` for deny-listed packages and, when allowlist mode is active,
+     * for packages not present in the user's allowlist.
+     */
     private fun shouldHandlePackage(pkg: String): Boolean {
         if (pkg.isBlank()) return false
         if (PACKAGE_DENYLIST.any { pkg.contains(it, ignoreCase = true) }) return false
@@ -360,7 +403,15 @@ class AutoNextService : AccessibilityService() {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
-        /** Heuristic for popup close icon in top-right area, such as "x"/"×". */
+    /**
+     * Heuristic: determines whether [node] is a popup close icon ("x" / "×" / "close").
+     *
+     * Checks:
+     *  1. The node text/id matches a close symbol or close hint.
+     *  2. It sits in the **top-right** quadrant of the root bounds.
+     *  3. Either the node itself or its immediate parent is clickable.
+     *  4. Layout-based popup validation passes ([isPopupBasedOnLayout]).
+     */
     private fun isCloseIcon(
         node: AccessibilityNodeInfo,
         text: String,
@@ -389,7 +440,14 @@ class AutoNextService : AccessibilityService() {
         return inTopArea && inRightArea && clickable && layoutValidation
     }
 
-        /** Enhanced layout-based popup detection. */
+    /**
+     * Layout-based popup detection.
+     *
+     * Validates that the node's bounding rect has proportions consistent with a popup
+     * dialog (10–80 % of screen width, 10–60 % of height) and is positioned near the
+     * screen center or top. Also requires at least one ancestor with a dialog/popup/modal
+     * class name (checked by [checkParentWithAlpha]).
+     */
     private fun isPopupBasedOnLayout(node: AccessibilityNodeInfo): Boolean {
         val rect = Rect()
         node.getBoundsInScreen(rect)
@@ -429,7 +487,7 @@ class AutoNextService : AccessibilityService() {
         return (isNearCenter || isNearTop) && hasParentWithAlpha
     }
 
-        /** Check if parent nodes have characteristics typical of popups (dialog, modal, etc.). */
+    /** Walks up to [CLOSE_SYMBOL_MAX_WALK_DEPTH] ancestors looking for class names containing "dialog", "popup", "modal", or "overlay". */
     private fun checkParentWithAlpha(node: AccessibilityNodeInfo): Boolean {
         var parent: AccessibilityNodeInfo? = node.parent
         repeat(CLOSE_SYMBOL_MAX_WALK_DEPTH) {
@@ -446,14 +504,22 @@ class AutoNextService : AccessibilityService() {
         return false
     }
 
-    /** Merges text and contentDescription so matches are not missed when only one is populated. */
+    /** Merges [AccessibilityNodeInfo.text] and [contentDescription] into a single string so keyword matching covers both fields. */
     private fun mergeLabels(node: AccessibilityNodeInfo): String =
         listOfNotNull(node.text?.toString(), node.contentDescription?.toString())
             .joinToString(" ")
 
-    // ---- Utilities --------------------------------------------------------
+    // ====================================================================
+    // Utilities
+    // ====================================================================
 
-    /** Performs a BFS traversal and invokes [action] for each node. Note: does not recycle child nodes retrieved by getChild(). */
+    /**
+     * Breadth-first traversal of the accessibility node tree.
+     * Invokes [action] for every reachable node starting from [root].
+     *
+     * Note: child nodes obtained via `getChild()` are **not** recycled here;
+     * callers that cache references should handle recycling themselves.
+     */
     private fun bfs(root: AccessibilityNodeInfo, action: (AccessibilityNodeInfo) -> Unit) {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -467,9 +533,13 @@ class AutoNextService : AccessibilityService() {
     }
 
     /**
-        * Clicks a node:
-        *  - If the node itself is clickable, perform ACTION_CLICK directly.
-        *  - Otherwise walk up at most MAX_PARENT_WALK_DEPTH levels to find the nearest clickable ancestor.
+     * Attempts to click [node].
+     *
+     * If the node is directly clickable, ACTION_CLICK is dispatched immediately.
+     * Otherwise, the method walks up to [MAX_PARENT_WALK_DEPTH] ancestor levels
+     * to locate the nearest clickable parent and clicks that instead.
+     *
+     * @return `true` if any node in the walk was successfully clicked.
      */
     private fun doClick(node: AccessibilityNodeInfo): Boolean {
         if (node.isClickable) {
@@ -487,7 +557,9 @@ class AutoNextService : AccessibilityService() {
         return false
     }
 
-    // ---- Accessibility button (system shortcut) ----------------------------
+    // ====================================================================
+    // Accessibility button (system navigation-bar shortcut)
+    // ====================================================================
 
     private fun registerAccessibilityButton() {
         val controller = accessibilityButtonController ?: return
@@ -525,8 +597,11 @@ class AutoNextService : AccessibilityService() {
     }
 
     /**
-     * Switches the launcher icon (and thus the system accessibility button icon)
-     * between active and paused states via activity-alias toggling.
+     * Toggles the launcher icon between **active** and **paused** variants.
+     *
+     * Uses two `<activity-alias>` entries declared in the manifest
+     * (`.MainActivityActive` / `.MainActivityPaused`). Only one alias is enabled
+     * at a time; `DONT_KILL_APP` keeps the running process alive during the switch.
      */
     private fun updateAppIcon(paused: Boolean) {
         val pm = packageManager
@@ -550,7 +625,9 @@ class AutoNextService : AccessibilityService() {
         }
     }
 
-    // ---- Top overlay banner ------------------------------------------------
+    // ====================================================================
+    // Top overlay banner — transient pause/resume feedback
+    // ====================================================================
 
     private fun showBanner(message: String, paused: Boolean) {
         dismissBanner()
@@ -614,7 +691,9 @@ class AutoNextService : AccessibilityService() {
         mainHandler.removeCallbacks(dismissBannerRunnable)
     }
 
-    // ---- Notification -----------------------------------------------------
+    // ====================================================================
+    // Status notification — persistent indicator in the notification shade
+    // ====================================================================
 
     private fun showStatusNotification() {
         ensureStatusNotificationChannel()
